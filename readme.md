@@ -15,7 +15,7 @@
 | **数据挑战** | 模拟真实数据，训练分析算法 |
 
 **对应的题目：**
-- (一) [致密双星并合信号搜寻](./Search%20for%20Gravitational%20Wave%20Signals%20from%20Compact%20Binary%20Mergers%20Based%20on%20Machine%20Learning/)
+- (一) [致密双星并合信号搜寻](./Search%20for%20Gravitational%20Wave%20Signals/)
 - (二) 快速参数推断
 - (三) PycWB时频聚类分析
 - (五) LISA/Taiji Data Challenge
