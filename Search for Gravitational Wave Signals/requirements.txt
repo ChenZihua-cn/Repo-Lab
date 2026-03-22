@@ -1,0 +1,20 @@
+# Core dependencies
+numpy
+torch
+torchaudio
+torchvision
+
+# Visualization and display
+matplotlib
+IPython
+
+# Scientific computing
+scipy
+scikit-learn
+pandas
+
+# Gravitational wave libraries
+lalsuite
+
+# Python 2/3 compatibility (optional, for legacy code)
+six

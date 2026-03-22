@@ -1,0 +1,11 @@
+[tool.pyright]
+# Pylance/Pyright configuration to handle import issues
+exclude = ["venv", "venv_gw", ".venv", "__pycache__", "**/node_modules", "**/.*"]
+
+# Ignore missing imports for packages that may not be installed in all environments
+reportMissingImports = "warning"
+reportMissingModuleSource = "warning"
+
+# Type checking settings
+pythonVersion = "3.8"
+pythonPlatform = "Linux"

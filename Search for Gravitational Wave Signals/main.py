@@ -1,26 +1,19 @@
-##############################################################################################################
 # 这部分代码主要是引入所需要的库
-#
-#
-##############################################################################################################
 import os
 import numpy as np
 from pathlib import Path
 from data_prep_bbh import *
 from utils import *
 
+# 获取脚本所在目录，确保路径正确
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+
 import torch
 from torch.utils.data import Dataset
 from torch.utils.data import DataLoader
 from torch import nn
 
-##############################################################################################################
 # 这部分代码主要是定义数据生成器
-#
-#
-##############################################################################################################
-
-
 class DatasetGenerator(Dataset):
     def __init__(self, fs=8192, T=1, snr=20,
                  detectors=['H1', 'L1'],
@@ -60,12 +53,7 @@ class DatasetGenerator(Dataset):
         # 获取数据的函数
         return self.strains[idx], self.labels[idx]
 
-
-##############################################################################################################
 # 这部分代码主要是定义网络结构，以及加载和保存模型的函数
-#
-#
-##############################################################################################################
 
 # 在模型定义中，我们定义了一个卷积神经网络，包含了多个卷积层、激活函数、批量归一化层和最大池化层。
 # 最后，我们添加了一个Flatten层和两个全连接层。
@@ -128,11 +116,8 @@ class MyNet(nn.Module):
             x = layer(x)
         return x
 
-    
-# 在模型保存和加载函数中，我们保存了模型的参数、优化器的状态、学习率调度器的状态和训练的epoch。
+
 # 在加载模型时，我们加载了模型的参数，并返回了模型、训练的epoch和训练损失历史。
-
-
 def load_model(checkpoint_dir=None):
     # 加载模型的函数
     net = MyNet()
@@ -154,7 +139,7 @@ def load_model(checkpoint_dir=None):
         print('Init network!')
         return net, 0, []
 
-
+# 在模型保存和加载函数中，我们保存了模型的参数、优化器的状态、学习率调度器的状态和训练的epoch。
 def save_model(epoch, model, optimizer, scheduler, checkpoint_dir, train_loss_history, filename):
     """Save a model and optimizer to file.
     """
@@ -182,20 +167,18 @@ def save_model(epoch, model, optimizer, scheduler, checkpoint_dir, train_loss_hi
     torch.save(output, p / filename)
 
 
-##############################################################################################################
 # 这部分代码主要是定义训练和评估函数
-#
-#
-##############################################################################################################
 
-numpy = lambda x, *args, **kwargs: x.detach().numpy(*args, **kwargs)
-size = lambda x, *args, **kwargs: x.numel(*args, **kwargs)
-reshape = lambda x, *args, **kwargs: x.reshape(*args, **kwargs)
-to = lambda x, *args, **kwargs: x.to(*args, **kwargs)
-reduce_sum = lambda x, *args, **kwargs: x.sum(*args, **kwargs)
-argmax = lambda x, *args, **kwargs: x.argmax(*args, **kwargs)
-astype = lambda x, *args, **kwargs: x.type(*args, **kwargs)
-transpose = lambda x, *args, **kwargs: x.t(*args, **kwargs)
+# 这段代码定义了一组PyTorch tensor 的别名函数，目的是让 PyTorch 的 API 看起来更像 NumPy/MXNet 的风格。
+# 每一行都是把 PyTorch tensor 的方法包装成独立函数
+numpy = lambda x, *args, **kwargs: x.detach().numpy(*args, **kwargs) # tensor → numpy数组（先detach脱离计算图）
+size = lambda x, *args, **kwargs: x.numel(*args, **kwargs) # 返回元素总数
+reshape = lambda x, *args, **kwargs: x.reshape(*args, **kwargs) # 改变形状
+to = lambda x, *args, **kwargs: x.to(*args, **kwargs) # 转移设备/类型（如 CPU→GPU）
+reduce_sum = lambda x, *args, **kwargs: x.sum(*args, **kwargs) # 求和
+argmax = lambda x, *args, **kwargs: x.argmax(*args, **kwargs) # 返回最大值的索引
+astype = lambda x, *args, **kwargs: x.type(*args, **kwargs) # 转换数据类型
+transpose = lambda x, *args, **kwargs: x.t(*args, **kwargs) # 转置（仅2D）
 
 
 def accuracy(y_hat, y):
@@ -316,13 +299,21 @@ def train(net, lr, nsample_perepoch, epoch, total_epochs,
             print(f'Epoch: {epoch+1} \t'
                   f'Train Loss: {train_l:.4f} Test Loss: {test_l:.4f} \t'
                   f'Train Acc: {train_acc} Test Acc: {test_acc}')
+        """
 
-        # 如果当前测试损失小于或等于历史最低测试损失，保存模型
-        if (test_l <= min(np.asarray(train_loss_history)[:,1])):
-            save_model(epoch, net, optimizer, scheduler, 
-                       checkpoint_dir=checkpoint_dir,
-                       train_loss_history=train_loss_history,
-                       filename=f'model_e{epoch}.pt',)
+# 如果当前测试损失小于或等于历史最低测试损失，保存模型
+#       if (test_l <= min(np.asarray(train_loss_history)[:,1])):
+#           save_model(epoch, net, optimizer, scheduler,
+#                      checkpoint_dir=checkpoint_dir,
+#                      train_loss_history=train_loss_history,
+#                      filename=f'model_e{epoch}.pt',)
+
+        """
+        # 每个 epoch 都保存模型
+        save_model(epoch, net, optimizer, scheduler, 
+                   checkpoint_dir=checkpoint_dir,
+                   train_loss_history=train_loss_history,
+                   filename=f'model_e{epoch}.pt',)
 
     # 打印最终的训练损失、训练准确率和测试准确率
     print(f'loss {train_l:.4f}, train acc {train_acc:.3f}, '
@@ -344,8 +335,8 @@ if __name__ == "__main__":
 
     device = torch.device('cuda')  # 使用CUDA设备
 
-    # 模型和损失历史的输出路径
-    checkpoint_dir = './checkpoints_cnn1/'
+    # 模型和损失历史的输出路径（基于脚本位置）
+    checkpoint_dir = os.path.join(SCRIPT_DIR, 'checkpoints_cnn1')
 
     # 创建模型    
     net, epoch, train_loss_history = load_model(checkpoint_dir)  # 加载模型
@@ -356,5 +347,9 @@ if __name__ == "__main__":
     total_epochs = 100  # 总的训练轮数
     total_epochs += epoch  # 加上已经训练过的轮数
     output_freq = 1  # 输出频率
-
+    train(net, lr, nsample_perepoch, epoch, total_epochs,
+        dataset_train, data_loader, test_iter,
+        train_loss_history, checkpoint_dir, device, notebook=False)
+    """原来的少传了参数..
     train(net, lr, nsample_perepoch, epoch, total_epochs, data_loader, test_iter, notebook=False)  # 训练模型```
+    """

@@ -1,17 +1,16 @@
-
 from __future__ import division
 
-import lal
-import lalsimulation
-from lal.antenna import AntennaResponse
-from lal import MSUN_SI, C_SI, G_SI
+import lal  # type: ignore
+import lalsimulation  # type: ignore
+from lal.antenna import AntennaResponse  # type: ignore
+from lal import MSUN_SI, C_SI, G_SI  # type: ignore
 
 import os
 import sys
 import argparse
 import time
 import numpy as np
-from six.moves import cPickle
+import pickle as cPickle
 from scipy.signal import filtfilt, butter
 from scipy.optimize import brentq
 from scipy import integrate, interpolate
@@ -515,24 +514,24 @@ def main():
     nblock = int(np.ceil(float(args.Nsamp)/float(args.Nblock)))
     for i in xrange(nblock):
 
-    	# simulate the dataset and randomise it
+        # simulate the dataset and randomise it
         # only use Nnoise for the training data NOT the validation and test
-    	print('{}: starting to generate data'.format(time.asctime()))
-    	ts, par = sim_data(args.fsample,safeTobs,args.snr,args.detectors,args.Nnoise,size=args.Nblock,mdist=args.mdist,beta=[0.75,0.95])
-    	print('{}: completed generating data {}/{}'.format(time.asctime(),i+1,nblock))
+        print('{}: starting to generate data'.format(time.asctime()))
+        ts, par = sim_data(args.fsample,safeTobs,args.snr,args.detectors,args.Nnoise,size=args.Nblock,mdist=args.mdist,beta=[0.75,0.95])
+        print('{}: completed generating data {}/{}'.format(time.asctime(),i+1,nblock))
 
-    	# pickle the results
-    	# save the timeseries data to file
-    	f = open(args.basename + '_ts_' + str(i) + '.sav', 'wb')
-    	cPickle.dump(ts, f, protocol=cPickle.HIGHEST_PROTOCOL)
-    	f.close()
-    	print('{}: saved timeseries data to file'.format(time.asctime()))
+        # pickle the results
+        # save the timeseries data to file
+        f = open(args.basename + '_ts_' + str(i) + '.sav', 'wb')
+        cPickle.dump(ts, f, protocol=cPickle.HIGHEST_PROTOCOL)
+        f.close()
+        print('{}: saved timeseries data to file'.format(time.asctime()))
 
-    	# save the sample parameters to file
-    	f = open(args.basename + '_params_' + str(i) + '.sav', 'wb')
-    	cPickle.dump(par, f, protocol=cPickle.HIGHEST_PROTOCOL)
-    	f.close()
-    	print('{}: saved parameter data to file'.format(time.asctime()))
+        # save the sample parameters to file
+        f = open(args.basename + '_params_' + str(i) + '.sav', 'wb')
+        cPickle.dump(par, f, protocol=cPickle.HIGHEST_PROTOCOL)
+        f.close()
+        print('{}: saved parameter data to file'.format(time.asctime()))
 
     print('{}: success'.format(time.asctime()))
 
