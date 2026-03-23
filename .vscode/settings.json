@@ -1,0 +1,11 @@
+{
+    // 降低 Pylance 对 C 扩展模块的类型检查严格度
+    "python.analysis.diagnosticSeverityOverrides": {
+        "reportAttributeAccessIssue": "warning",
+        "reportOptionalMemberAccess": "warning"
+    },
+    
+    // 如果你希望完全关闭这些提示，可以用 "none"
+    // "reportAttributeAccessIssue": "none",
+    // "reportOptionalMemberAccess": "none"
+}
