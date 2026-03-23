@@ -68,8 +68,16 @@ class MyNet(nn.Module):
         filter_stride = [(1, 1)] * 8
         dilation = [(1, 1)] * 8
         pooling = [1, 0, 0, 0, 1, 0, 0, 1]
-        pool_size = [[1, 8]] + [(1, 1)] * 3 + [[1, 6]] + [(1, 1)] * 2 + [[1, 4]]
-        pool_stride = [[1, 8]] + [(1, 1)] * 3 + [[1, 6]] + [(1, 1)] * 2 + [[1, 4]]
+        # pool_size = [[1, 8]] + [(1, 1)] * 3 + [[1, 6]] + [(1, 1)] * 2 + [[1, 4]]
+        # pool_stride = [[1, 8]] + [(1, 1)] * 3 + [[1, 6]] + [(1, 1)] * 2 + [[1, 4]]
+        """
+        PyTorch 的 kernel_size 参数类型是 _size_any_t，
+        只接受 int 或 tuple，不接受 list。
+        原来混用了 [1, 8]（list）和 (1, 1)（tuple），
+        导致 Pylance 推断类型为 list | tuple，从而报错。
+        """
+        pool_size = [(1, 8)] + [(1, 1)] * 3 + [(1, 6)] + [(1, 1)] * 2 + [(1, 4)]
+        pool_stride = [(1, 8)] + [(1, 1)] * 3 + [(1, 6)] + [(1, 1)] * 2 + [(1, 4)]
 
         self.layers = nn.ModuleList()
 
