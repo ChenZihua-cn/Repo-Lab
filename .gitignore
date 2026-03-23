@@ -2,4 +2,5 @@
 培养计划.md
 *.npy
 *.pt
-/venv_gw/
+venv_gw/
+Search for Gravitational Wave Signals/__pycache__/
