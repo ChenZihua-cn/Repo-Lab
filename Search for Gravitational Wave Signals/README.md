@@ -1,80 +1,248 @@
-根据代码分析，以下是 `data_prep_bbh.py` 中**引力波信号+噪声数据生成方法**的详细说明，以及**引用关系**：
+# 引力波信号检测系统技术文档
+
+本文档详细说明引力波信号（BBH/BNS）数据生成方法、深度学习模型架构、模块引用关系及评估指标。
 
 ---
 
-## 一、数据生成方法详解
+## 目录
 
-### 1. 噪声生成 (`gen_noise` + `gen_psd`)
+1. [系统概述](#一系统概述)
+2. [数据生成方法](#二数据生成方法)
+   - 2.1 [BBH（Binary Black Hole，双黑洞）信号](#21-bbhbinary-black-hole双黑洞信号)
+   - 2.2 [BNS（Binary Neutron Star，双中子星）信号](#22-bnsbinary-neutron-star双中子星信号)
+3. [模型架构](#三模型架构)
+   - 3.1 [CNN（Convolutional Neural Network，卷积神经网络）模型](#31-cnnconvolutional-neural-network卷积神经网络模型)
+   - 3.2 [ResNet（Residual Network，残差网络）模型](#32-resnetresidual-network残差网络模型)
+4. [模块引用关系](#四模块引用关系)
+5. [关键参数配置](#五参数配置)
+6. [模型评估指标](#六模型评估指标)
+7. [训练基础概念](#七训练基础概念)
+
+---
+
+## 一、系统概述
+
+本系统用于检测引力波（Gravitational Wave，GW）信号，支持两种波源类型：
+
+| 波源类型 | 英文全称 | 质量范围 | 特征频率 | 波形模型 |
+|---------|---------|---------|---------|---------|
+| **BBH** | Binary Black Hole（双黑洞） | 5-100 M☉ | 较低 (~10-100 Hz) | IMRPhenomD |
+| **BNS** | Binary Neutron Star（双中子星） | 2-4 M☉ | 较高 (~100-1000 Hz) | IMRPhenomD |
+
+系统包含数据生成模块 (`data_prep_*.py`)、模型定义 (`main*.py`) 和训练评估脚本 (`train*.py`, `evaluate*.py`)。
+
+---
+
+## 二、数据生成方法
+
+### 2.1 BBH（Binary Black Hole，双黑洞）信号
+
+**文件**: `data_prep_bbh.py`
+
+#### 2.1.1 噪声生成
+
 ```python
-# 生成探测器噪声的PSD（功率谱密度）
+# 生成探测器噪声的PSD（Power Spectral Density，功率谱密度）
 psd = gen_psd(fs, T_obs, op='AdvDesign', det='H1')
-# 使用 LALSimulation 库中的 AdvDesign 灵敏度曲线
 
 # 根据PSD生成时域高斯噪声
 noise = gen_noise(fs, T_obs, psd)
-# 原理：在频域生成复高斯随机数 → 乘以sqrt(PSD/4) → 逆FFT得到时域噪声
+# 原理：频域复高斯随机数 → 乘以sqrt(PSD/4) → IFFT（Inverse Fast Fourier Transform，逆快速傅里叶变换）得到时域噪声
 ```
 
-### 2. BBH（双黑洞）信号生成 (`gen_bbh`)
+#### 2.1.2 BBH 信号生成
+
+使用 LALSimulation 的 IMRPhenomD 波形近似：
+
 ```python
-# 使用 LALSimulation 的 IMRPhenomD 波形近似生成引力波信号
 hp, hc = lalsimulation.SimInspiralChooseTDWaveform(
-    m1*MSUN_SI, m2*MSUN_SI,  # 质量
-    0, 0, 0, 0, 0, 0,         # 自旋（这里设为0）
+    m1*MSUN_SI, m2*MSUN_SI,  # 质量 (5-100 M☉)
+    0, 0, 0, 0, 0, 0,         # 自旋（设为0）
     1e6*PC_SI,                # 距离（1Mpc）
     iota, phi, 0, 0, 0,       # 倾角、相位
-    1/fs, f_low, f_low,       # 采样率、起始频率
-    approximant=IMRPhenomD    # 波形模型
+    1/fs, f_low, f_low,       # 采样率、起始频率 (~10Hz)
+    approximant=IMRPhenomD
 )
 ```
 
-### 3. 探测器响应 (`make_bbh`)
-- **天线响应**：根据天空位置(ra, dec)和极化角(psi)计算Fp、Fc响应函数
-- **时间延迟**：计算信号到达不同探测器相对于地心的时间延迟
+#### 2.1.3 探测器响应
 
-### 4. 信号+噪声合成 (`sim_data`)
-这是**主数据生成函数**，生成流程如下：
+- **天线响应**：根据天空位置(ra, dec)和极化角(psi)计算 Fp、Fc
+- **时间延迟**：计算信号到达不同探测器相对于地心的延迟
+
+#### 2.1.4 数据合成流程 (`sim_data`)
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│  1. 噪声类样本 (label=0):                                │
-│     - 纯噪声 → 白化 → 保存                               │
+│  噪声类样本 (label=0):                                   │
+│     纯噪声 → 白化 → 保存                                 │
 │                                                         │
-│  2. 信号类样本 (label=1):                                │
-│     - 随机生成BBH参数(m1, m2, 位置, 角度等)              │
-│     - 生成波形(hp, hc) → 应用探测器响应                  │
-│     - 归一化到目标SNR                                    │
-│     - 每个信号叠加 Nnoise 组不同的噪声实现               │
-│     - 白化处理 → 保存                                    │
+│  信号类样本 (label=1):                                   │
+│     随机生成BBH参数(m1, m2, ra, dec等)                  │
+│     生成波形(hp, hc) → 应用探测器响应                    │
+│     归一化到目标SNR（Signal-to-Noise Ratio，信噪比）    │
+│     每个信号叠加 Nnoise 组不同噪声实现                   │
+│     白化处理 → 保存                                      │
 └─────────────────────────────────────────────────────────┘
 ```
 
-### 5. 质量分布 (`gen_masses`)
-支持3种质量分布模式：
-| 模式 | 说明 |
-|------|------|
-| `astro` | 天体物理对数分布 |
-| `gh` | George & Huerta分布 (质量比q~[1,10]) |
-| `metric` | 度规基础分布 |
+#### 2.1.5 质量分布 (`gen_masses`)
+
+| 模式 | 说明 | 质量范围 |
+|------|------|---------|
+| `astro` | 天体物理对数分布 | 5-100 M☉ |
+| `gh` | George & Huerta分布 (q~[1,10]) | 5-100 M☉ |
+| `metric` | 度规基础分布 | 5-100 M☉ |
 
 ---
 
-## 二、引用关系
+### 2.2 BNS（Binary Neutron Star，双中子星）信号
 
-### 直接引用
-| 文件 | 引用方式 | 用途 |
-|------|---------|------|
-| **`main.py`** | `from data_prep_bbh import *` | 在 `DatasetGenerator.generate()` 中调用 `sim_data()` 实时生成训练数据 |
-| **`data_prep_bbh.py` 自身** | 内部调用 | `sim_data()` 调用 `gen_par()`, `gen_bbh()`, `gen_noise()`, `whiten_data()` 等 |
+**文件**: `data_prep_bns.py`
 
-### 间接引用（通过 `main.py`）
-| 文件 | 说明 |
+#### 2.2.1 BNS 物理参数
+
+| 参数 | 说明 | 范围 |
+|------|------|------|
+| m1, m2 | 中子星质量 | 1.0-2.0 M☉ |
+| M | 总质量 | 2.0-4.0 M☉ |
+| mc | 啁啾质量（Chirp Mass） | Mc = (m1*m2)^(3/5) / (m1+m2)^(1/5) |
+| eta | 对称质量比 | η = m1*m2 / (m1+m2)^2 |
+
+#### 2.2.2 BNS 信号生成
+
+与BBH类似，但关键区别：
+
+```python
+# 起始频率更高（BNS特征频率更高）
+f_low = 15.0  # Hz (BBH 约 10Hz)
+
+# 质量范围更小
+m1, m2 = 1.0-2.0 M☉  # 单个中子星
+M = 2.0-4.0 M☉       # 总质量
+
+# 使用相同的IMRPhenomD波形模型
+hp, hc = lalsimulation.SimInspiralChooseTDWaveform(
+    par.m1 * lal.MSUN_SI, par.m2 * lal.MSUN_SI,
+    0, 0, 0, 0, 0, 0,
+    dist, par.iota, par.phi, 0, 0, 0,
+    1/fs, f_low, f_low,
+    lal.CreateDict(),
+    approximant  # IMRPhenomD
+)
+```
+
+#### 2.2.3 BNS 质量分布
+
+| 模式 | 特点 |
 |------|------|
-| `evaluate.py` | 通过 `from main import DatasetGenerator` 生成测试数据评估模型 |
-| `generate_submission.py` | 主要做推理，不直接生成训练数据 |
-| `train.py` | 训练脚本（可能也使用了 `DatasetGenerator`）|
+| `astro` | 天体物理对数分布，单个中子星 1.0-2.0 M☉ |
+| `gh` | George & Huerta分布，质量比 q~[1, 2] |
+| `metric` | 度规基础分布，总质量 2.0-4.0 M☉ |
 
-### 调用链示例
+#### 2.2.4 核心函数
+
+| 函数 | 功能 |
+|------|------|
+| `gen_par()` | 生成随机BNS参数集 |
+| `gen_bns()` | 生成BNS时域信号 |
+| `make_bns()` | 应用探测器响应和时间延迟 |
+| `sim_data()` | 主数据生成函数 |
+| `get_fmin()` | 使用2PN（2-Post-Newtonian，二阶后牛顿）啁啾时间公式计算起始频率 |
+
+---
+
+## 三、模型架构
+
+### 3.1 CNN（Convolutional Neural Network，卷积神经网络）模型
+
+**文件**: `main.py`
+
+#### 3.1.1 网络结构
+
+```
+输入: (batch, 1, ndet, fs*T)  [默认: (N, 1, 2, 16384)]
+
+卷积层 1: Conv2d(1→8,  kernel=(1,32)) → ELU → BatchNorm → MaxPool(1,8)
+卷积层 2: Conv2d(8→16, kernel=(1,16)) → ELU → BatchNorm
+卷积层 3: Conv2d(16→16, kernel=(1,16)) → ELU → BatchNorm
+卷积层 4: Conv2d(16→32, kernel=(1,16)) → ELU → BatchNorm
+卷积层 5: Conv2d(32→64, kernel=(1,8))  → ELU → BatchNorm → MaxPool(1,6)
+卷积层 6: Conv2d(64→64, kernel=(1,8))  → ELU → BatchNorm
+卷积层 7: Conv2d(64→128, kernel=(1,4)) → ELU → BatchNorm
+卷积层 8: Conv2d(128→128, kernel=(1,4)) → ELU → BatchNorm → MaxPool(1,4)
+
+Flatten → Linear(20224→64) → ELU → Dropout(0.5) → Linear(64→2)
+
+输出: 2类分类 (0=噪声, 1=信号)
+```
+
+#### 3.1.2 关键配置
+
+| 配置项 | 值 |
+|--------|-----|
+| 优化器 | Adam（Adaptive Moment Estimation，自适应矩估计） |
+| 学习率 | 0.003 |
+| 学习率调度 | CosineAnnealingLR（余弦退火学习率） |
+| 损失函数 | CrossEntropyLoss（交叉熵损失） |
+| Dropout | 0.5 |
+| 激活函数 | ELU（Exponential Linear Unit，指数线性单元） |
+
+---
+
+### 3.2 ResNet（Residual Network，残差网络）模型
+
+**文件**: `main_resnet.py`
+
+用于BNS信号检测的ResNet架构，特点：
+- 使用残差连接（Residual Connection）解决深层网络梯度消失问题
+- 更适合处理BNS的高频信号特征
+- 训练脚本: `train_resnet.py`
+- 评估脚本: `evaluate_resnet.py`
+
+---
+
+## 四、模块引用关系
+
+### 4.1 文件依赖图
+
+```
+                    ┌─────────────────┐
+                    │ data_prep_bbh.py│
+                    │  (BBH数据生成)   │
+                    └────────┬────────┘
+                             │
+                    ┌────────▼────────┐
+                    │     main.py     │
+                    │ (CNN模型+数据流) │
+                    └────────┬────────┘
+                             │
+        ┌────────────────────┼────────────────────┐
+        │                    │                    │
+┌───────▼───────┐   ┌────────▼────────┐  ┌───────▼───────┐
+│   train.py    │   │   evaluate.py   │  │generate_submission.py│
+│   (训练脚本)   │   │   (评估脚本)     │  │   (推理提交)   │
+└───────────────┘   └─────────────────┘  └───────────────┘
+
+                    ┌─────────────────┐
+                    │ data_prep_bns.py│
+                    │  (BNS数据生成)   │
+                    └────────┬────────┘
+                             │
+                    ┌────────▼────────┐
+                    │  main_resnet.py │
+                    │(ResNet模型+数据流)│
+                    └────────┬────────┘
+                             │
+        ┌────────────────────┼────────────────────┐
+        │                    │                    │
+┌───────▼───────┐   ┌────────▼────────┐  ┌───────▼───────────┐
+│train_resnet.py│   │evaluate_resnet.py│  │generate_submission.py│
+└───────────────┘   └─────────────────┘  └───────────────────┘
+```
+
+### 4.2 调用链示例
+
 ```
 main.py:DatasetGenerator.generate()
     └── data_prep_bbh.py:sim_data()
@@ -88,40 +256,41 @@ main.py:DatasetGenerator.generate()
 
 ---
 
-## 三、关键参数（默认值）
+## 五、参数配置
 
-```python
-fs = 8192          # 采样频率 (Hz)
-T_obs = 1s         # 观测时长（实际使用 safe=2，即2秒）
-detectors = [H1, L1]  # 探测器（汉福德、利文斯顿）
-Nnoise = 25        # 每个信号叠加25组噪声实现
-mdist = 'metric'   # 质量分布
-snr = 20           # 目标信噪比
-```
+### 5.1 数据生成参数
+
+| 参数 | 默认值 | 说明 |
+|------|--------|------|
+| `fs` | 8192 Hz | 采样频率（Sampling Frequency） |
+| `T_obs` | 1s | 观测时长（Observation Duration），实际使用 safe=2，即2秒 |
+| `detectors` | [H1, L1] | 探测器（汉福德Hanford、利文斯顿Livingston） |
+| `Nnoise` | 25 | 每个信号叠加25组噪声实现 |
+| `mdist` | 'metric' | 质量分布模式 |
+| `snr` | 20 | 目标信噪比（Signal-to-Noise Ratio） |
+
+### 5.2 训练参数
+
+| 参数 | 默认值 | 说明 |
+|------|--------|------|
+| `batch_size` | 32 | 批次大小 |
+| `lr` | 0.003 | 学习率（Learning Rate） |
+| `total_epochs` | 100 | 总训练轮数 |
+| `nsample_perepoch` | 100 | 每轮生成的样本数 |
 
 ---
 
-现在我来详细解释ROC曲线和AUC，以及你的结果：
+## 六、模型评估指标
 
----
+### 6.1 ROC（Receiver Operating Characteristic，受试者工作特征）曲线
 
-## 1. ROC曲线是什么？
-
-**ROC** = Receiver Operating Characteristic（受试者工作特征曲线）
-
-- **横轴 (X轴)**: False Positive Rate (FPR) - 假阳性率
+- **横轴 (X轴)**: FPR（False Positive Rate，假阳性率）
   - FPR = FP / (FP + TN)
-  - "把负样本错误地预测为正样本"的比例
   
-- **纵轴 (Y轴)**: True Positive Rate (TPR) - 真阳性率（也叫Recall/召回率）
+- **纵轴 (Y轴)**: TPR（True Positive Rate，真阳性率）
   - TPR = TP / (TP + FN)
-  - "把正样本正确地预测为正样本"的比例
 
----
-
-## 2. AUC是什么？
-
-**AUC** = Area Under the Curve（曲线下面积）
+### 6.2 AUC（Area Under the Curve，曲线下面积）指标
 
 | AUC值 | 含义 |
 |--------|------|
@@ -129,114 +298,112 @@ snr = 20           # 目标信噪比
 | 0.9-0.99 | 优秀 |
 | 0.8-0.9 | 良好 |
 | 0.7-0.8 | 一般 |
-| **0.5** | **随机猜测**（和抛硬币一样）|
-| < 0.5 | 比随机还差（可能标签反了）|
+| **0.5** | **随机猜测** |
+| < 0.5 | 比随机差（可能标签反了）|
 
----
-
-## 3. 为什么你的图是"直线"？
-
-你的图不是严格的直线，而是一条**接近对角线的曲线**（AUC=0.4661）。
-
-**这表示你的模型几乎是在随机猜测，甚至比随机猜测还差！**
-
-可能的原因：
-1. **模型没有训练好** - 权重是随机的，或者训练epoch太少
-2. **标签反了** - 检查训练时的标签是否正确
-3. **数据问题** - 训练数据和测试数据分布不一致
-4. **SNR设置** - 你的信噪比可能太低，信号太弱
-
----
-
-## 4. 和ipynb里的图对比
-
-第二张图（ipynb里的）展示了**不同SNR（信噪比）**下的ROC曲线：
+### 6.3 SNR（Signal-to-Noise Ratio，信噪比）对性能的影响
 
 | SNR | AUC | 说明 |
 |-----|-----|------|
 | 5 | 0.59 | 信号很弱，勉强比随机好 |
-| 10 | 0.82 | 信号较弱，但可以接受 |
+| 10 | 0.82 | 信号较弱，可接受 |
 | 15 | 0.98 | 信号清晰，分类效果好 |
 | 20 | 0.99 | 信号非常清晰，几乎完美 |
 
-**结论**：信噪比越高，信号越容易识别，AUC越高，ROC曲线越靠近左上角。
+### 6.4 常见问题排查
+
+如果 AUC < 0.5：
+
+1. **检查模型加载** - 确认加载的是训练好的权重
+2. **检查SNR设置** - 尝试提高SNR到20
+3. **检查标签一致性** - 训练/测试时标签0/1含义是否一致
+4. **检查数据分布** - 测试数据与训练数据分布是否一致
 
 ---
 
-## 5. Luck / Random 是什么？
+## 七、训练基础概念
 
-- **Random（随机）**：对角线，AUC=0.50
-  - 表示"瞎猜"的水平
-  - 如果你完全随机猜测，就会得到这条线
-  
-- **Luck（运气）**：和Random是一个意思
-  - 在第二张图里标注为"Luck"
+### 7.1 Epoch
+
+**Epoch** 指整个训练数据集被完整传递一次的过程。
+
+#### Epoch、Batch、Iteration 的关系
+
+$$
+\text{总迭代次数} = \frac{\text{数据集大小}}{\text{Batch Size}} \times \text{Epoch 数}
+$$
+
+| 概念 | 英文全称 | 说明 |
+|------|---------|------|
+| **Batch Size** | - | 一次迭代使用的样本数量 |
+| **Iteration** | - | 模型参数更新一次 |
+| **Epoch** | - | 遍历完整数据集一次 |
+
+**示例**：1000 张图片，Batch Size = 100
+- 1 个 Epoch = 10 次 Iteration
+- 模型看到 1000 张图片，更新 10 次参数
+
+### 7.2 早停法（Early Stopping）
+
+防止过拟合（Overfitting）的策略：
+1. 划分训练集和验证集
+2. 每个 Epoch 后计算验证集损失
+3. 验证集损失不再下降时停止训练
+
+### 7.3 欠拟合与过拟合
+
+| 问题 | 英文 | 原因 | 解决 |
+|------|------|------|------|
+| 欠拟合 | Underfitting | Epoch 太少 | 增加训练轮数 |
+| 过拟合 | Overfitting | Epoch 太多 | 早停、正则化（Regularization）、Dropout |
 
 ---
 
-## 6. 你该怎么办？
+## 附录
 
-你的AUC=0.4661 < 0.5，说明有问题。建议检查：
+### A. 核心文件清单
 
-1. **检查模型是否正确加载** - 确认加载的是训练好的权重，不是随机初始化的
-2. **检查SNR设置** - 尝试提高SNR（比如设为20），看AUC是否改善
-3. **检查标签** - 确认训练时标签0/1的含义和测试时一致
-4. **检查数据生成** - 确认测试数据生成代码正确
+| 文件 | 功能 |
+|------|------|
+| `data_prep_bbh.py` | BBH数据生成 |
+| `data_prep_bns.py` | BNS数据生成 |
+| `main.py` | CNN模型定义 |
+| `main_resnet.py` | ResNet模型定义 |
+| `train.py` | CNN训练脚本 |
+| `train_resnet.py` | ResNet训练脚本 |
+| `evaluate.py` | CNN评估脚本 |
+| `evaluate_resnet.py` | ResNet评估脚本 |
+| `generate_submission.py` | 推理提交 |
+| `utils.py` | 工具函数 |
 
-可以尝试运行：
-```python
-# 提高SNR看看效果
-snr = 20  # 原来是多少？
+### B. 依赖库
+
+```
+- lal / lalsimulation: LIGO算法库
+- torch / torchvision: PyTorch深度学习框架
+- numpy: 数值计算
+- scipy: 信号处理
 ```
 
-如果SNR=20时AUC还是很低，那问题出在模型训练或加载上。
+### C. 缩写词汇表
 
----
-
-## Epoch
-
-**Epoch** 是机器学习和深度学习中最基本的概念之一，简单来说，它指的是**整个训练数据集被完整地向前传递一次（包括前向传播和后向传播）的过程**。
-
-为了帮你更清晰地理解，我们可以把它拆解成几个层面来看：
-
-### 1. 一个直观的类比：课程学习
-想象你在准备期末考试，复习资料一共有 **1000 道题**。
-
--   **1 个 Batch（批次）**：你一次拿出 **32 道题**来做。
--   **1 个 Iteration（迭代）**：你做完了这 32 道题，并对照答案纠正了理解，这叫一次迭代。
--   **1 个 Epoch（时期）**：当你把这 **1000 道题全部做完一遍**（无论分了多少次），这就叫 1 个 Epoch。
-
-### 2. Epoch 与 Batch、Iteration 的关系
-在训练模型时，我们通常不会把整个数据集一次性塞进模型（因为显存/内存不够，且收敛效果不一定好），而是将其分成多个小块。三者的关系公式如下：
-\[
-\text{总迭代次数} = \frac{\text{数据集大小}}{\text{Batch Size}} \times \text{Epoch 数}
-\]
-
--   **Batch Size（批次大小）**：一次迭代（一次参数更新）所使用的样本数量。
--   **Iteration（迭代）**：模型更新一次参数的过程。
--   **Epoch（时期）**：**Iteration × Batch Size = 完整数据集**。
-
-**举例说明**：
-假设你有 **1000 张图片**，设定 **Batch Size = 100**。
-
--   完成 1 个 Epoch，你需要进行 \(1000 \div 100 = 10\) 次 Iteration（迭代）。
--   模型在这 1 个 Epoch 里，总共看到了 1000 张图片，并更新了 10 次参数。
-
-### 3. 为什么要设置多个 Epoch？
-在深度学习中，通常不会只训练 1 个 Epoch。因为模型需要**多次**“翻阅”数据集，才能逐渐从数据中提取出深层的规律。
-
--   **Underfitting（欠拟合）**：Epoch 太少，模型还没学会规律，准确率很低。
--   **Overfitting（过拟合）**：Epoch 太多，模型把训练集中的噪音（无关信息）也记住了，导致在测试集上表现变差。
-
-### 4. 如何选择合适的 Epoch？
-在实际操作中，我们不会事先知道该设多少个 Epoch。通常采用**早停法**：
-
-1.  将数据集划分为训练集和验证集。
-2.  在每个 Epoch 结束后，计算验证集的损失函数值。
-3.  随着 Epoch 增加，验证集损失通常会先下降，后上升。
-4.  当验证集损失开始不再下降（或开始上升）时，就停止训练。这时的 Epoch 数就是最佳值。
-
-### 总结
--   **Epoch** 是一个时间单位，代表模型将**所有数据**看了一遍。
--   它和 **Batch**、**Iteration** 共同决定了模型参数更新的次数。
--   设置合适的 Epoch 数量是防止模型**欠拟合**或**过拟合**的关键。
+| 缩写 | 英文全称 | 中文翻译 |
+|------|---------|---------|
+| BBH | Binary Black Hole | 双黑洞 |
+| BNS | Binary Neutron Star | 双中子星 |
+| GW | Gravitational Wave | 引力波 |
+| PSD | Power Spectral Density | 功率谱密度 |
+| SNR | Signal-to-Noise Ratio | 信噪比 |
+| CNN | Convolutional Neural Network | 卷积神经网络 |
+| ResNet | Residual Network | 残差网络 |
+| ROC | Receiver Operating Characteristic | 受试者工作特征 |
+| AUC | Area Under the Curve | 曲线下面积 |
+| FPR | False Positive Rate | 假阳性率 |
+| TPR | True Positive Rate | 真阳性率 |
+| FFT | Fast Fourier Transform | 快速傅里叶变换 |
+| IFFT | Inverse Fast Fourier Transform | 逆快速傅里叶变换 |
+| ELU | Exponential Linear Unit | 指数线性单元 |
+| ReLU | Rectified Linear Unit | 线性整流单元 |
+| Adam | Adaptive Moment Estimation | 自适应矩估计 |
+| PN | Post-Newtonian | 后牛顿近似 |
+| M☉ | Solar Mass | 太阳质量 |
